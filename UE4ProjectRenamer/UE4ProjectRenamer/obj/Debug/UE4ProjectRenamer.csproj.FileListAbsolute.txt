@@ -1,0 +1,7 @@
+D:\Users\carli\Documents\Unreal Projects\VRExpansion\UE4ProjectRenamer\UE4ProjectRenamer\bin\Debug\UE4ProjectRenamer.exe.config
+D:\Users\carli\Documents\Unreal Projects\VRExpansion\UE4ProjectRenamer\UE4ProjectRenamer\bin\Debug\UE4ProjectRenamer.exe
+D:\Users\carli\Documents\Unreal Projects\VRExpansion\UE4ProjectRenamer\UE4ProjectRenamer\bin\Debug\UE4ProjectRenamer.pdb
+D:\Users\carli\Documents\Unreal Projects\VRExpansion\UE4ProjectRenamer\UE4ProjectRenamer\obj\Debug\UE4ProjectRenamer.csproj.AssemblyReference.cache
+D:\Users\carli\Documents\Unreal Projects\VRExpansion\UE4ProjectRenamer\UE4ProjectRenamer\obj\Debug\UE4ProjectRenamer.csproj.CoreCompileInputs.cache
+D:\Users\carli\Documents\Unreal Projects\VRExpansion\UE4ProjectRenamer\UE4ProjectRenamer\obj\Debug\UE4ProjectRenamer.exe
+D:\Users\carli\Documents\Unreal Projects\VRExpansion\UE4ProjectRenamer\UE4ProjectRenamer\obj\Debug\UE4ProjectRenamer.pdb
