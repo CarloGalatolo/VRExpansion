@@ -1,3 +1,7 @@
+**Instructions**
+First launch on new device:
+* Rebuild plugins via Engine (worry not, my friend from the future)
+
 ### How do I get set up? ###
 
 Current compatible versions for template: Latest Engine Version (Template is not kept to as many compatible versions as the plugin itself).
