@@ -52,7 +52,7 @@ bool FSavedMove_VRBaseCharacter::CanCombineWith(const FSavedMovePtr& NewMove, AC
 	if (!nMove || (VRReplicatedMovementMode != nMove->VRReplicatedMovementMode))
 		return false;
 
-	if (!ConditionalValues.MoveActionArray.CanCombine() || !nMove->ConditionalValues.MoveActionArray.CanCombine())
+	if (ConditionalValues.MoveActionArray.MoveActions.Num() > 0 || nMove->ConditionalValues.MoveActionArray.MoveActions.Num() > 0)
 		return false;
 
 	if (!ConditionalValues.CustomVRInputVector.IsZero() || !nMove->ConditionalValues.CustomVRInputVector.IsZero())
@@ -62,10 +62,10 @@ bool FSavedMove_VRBaseCharacter::CanCombineWith(const FSavedMovePtr& NewMove, AC
 		return false;
 
 	// Hate this but we really can't combine if I am sending a new capsule height
-	if (!FMath::IsNearlyEqual(CapsuleHeight, nMove->CapsuleHeight))
+	if (!FMath::IsNearlyEqual(LFDiff.Z, nMove->LFDiff.Z))
 		return false;
 
-	if (!LFDiff.IsZero() && !nMove->LFDiff.IsZero() && !FVector::Coincident(LFDiff.GetSafeNormal(), nMove->LFDiff.GetSafeNormal(), AccelDotThresholdCombine))
+	if (!FVector2D(LFDiff.X, LFDiff.Y).IsZero() && !FVector2D(nMove->LFDiff.X, nMove->LFDiff.Y).IsZero() && !FVector::Coincident(LFDiff.GetSafeNormal2D(), nMove->LFDiff.GetSafeNormal2D(), AccelDotThresholdCombine))
 		return false;
 
 	return FSavedMove_Character::CanCombineWith(NewMove, Character, MaxDelta);
@@ -119,12 +119,12 @@ void FSavedMove_VRBaseCharacter::SetInitialPosition(ACharacter* C)
 		if (AVRBaseCharacter* BaseChar = Cast<AVRBaseCharacter>(C))
 		{
 			if (BaseChar->VRReplicateCapsuleHeight)
-				CapsuleHeight = BaseChar->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+				LFDiff.Z = BaseChar->GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
 			else
-				CapsuleHeight = 0.0f;
+				LFDiff.Z = 0.0f;
 		}
 		else
-			CapsuleHeight = 0.0f;
+			LFDiff.Z = 0.0f;
 	}
 	else
 	{
@@ -172,9 +172,6 @@ void FSavedMove_VRBaseCharacter::CombineWith(const FSavedMove_Character* OldMove
 	// Changes in certain counters like JumpCurrentCount don't allow move combining, so no need to roll those back (they are the same).
 	InCharacter->JumpForceTimeRemaining = OldMove->JumpForceTimeRemaining;
 	InCharacter->JumpKeyHoldTime = OldMove->JumpKeyHoldTime;
-
-	// Merge if we had valid mergable move actions
-	ConditionalValues.MoveActionArray.MoveActions.Append(BaseSavedMovePending->ConditionalValues.MoveActionArray.MoveActions);
 }
 
 void FSavedMove_VRBaseCharacter::PostUpdate(ACharacter* C, EPostUpdateMode PostUpdateMode)
@@ -189,17 +186,7 @@ void FSavedMove_VRBaseCharacter::PostUpdate(ACharacter* C, EPostUpdateMode PostU
 		ConditionalValues.CustomVRInputVector = moveComp->CustomVRInputVector;
 		ConditionalValues.MoveActionArray = moveComp->MoveActionArray;
 		moveComp->MoveActionArray.Clear();
-
-		if (!moveComp->bUseClientControlRotation)
-		{
-			if (const USceneComponent* UpdatedComponent = moveComp->UpdatedComponent)
-			{
-				SavedControlRotation = UpdatedComponent->GetComponentRotation().Clamp();
-			}
-		}
 	}
-
-
 	//}
 	/*if (ConditionalValues.MoveAction.MoveAction != EVRMoveAction::VRMOVEACTION_None)
 	{
@@ -232,7 +219,6 @@ void FSavedMove_VRBaseCharacter::Clear()
 	VRCapsuleLocation = FVector::ZeroVector;
 	VRCapsuleRotation = FRotator::ZeroRotator;
 	LFDiff = FVector::ZeroVector;
-	CapsuleHeight = 0.0f;
 
 	ConditionalValues.CustomVRInputVector = FVector::ZeroVector;
 	ConditionalValues.RequestedVelocity = FVector::ZeroVector;
@@ -302,8 +288,7 @@ FVRCharacterNetworkMoveData::FVRCharacterNetworkMoveData() : FCharacterNetworkMo
 {
 	VRCapsuleLocation = FVector::ZeroVector;
 	LFDiff = FVector::ZeroVector;
-	CapsuleHeight = 0.f;
-	VRCapsuleRotation = 0.f;
+	VRCapsuleRotation = 0;
 	ReplicatedMovementMode = EVRConjoinedMovementModes::C_MOVE_MAX;
 }
 
@@ -325,7 +310,6 @@ void FVRCharacterNetworkMoveData::ClientFillNetworkMoveData(const FSavedMove_Cha
 		// #TODO: Roll these into the conditionals
 		VRCapsuleLocation = SavedMove->VRCapsuleLocation;
 		LFDiff = SavedMove->LFDiff;
-		CapsuleHeight = SavedMove->CapsuleHeight;
 		VRCapsuleRotation = FRotator::CompressAxisToShort(SavedMove->VRCapsuleRotation.Yaw);
 	}
 }
@@ -365,21 +349,8 @@ bool FVRCharacterNetworkMoveData::Serialize(UCharacterMovementComponent& Charact
 
 	ACharacter* CharacterOwner = CharacterMovement.GetCharacterOwner();
 
-	bool bRepRollAndPitch = false;
-
-	if (AVRBaseCharacter* BaseChar = Cast<AVRBaseCharacter>(CharacterOwner))
-	{
-		if (BaseChar->VRMovementReference && !BaseChar->VRMovementReference->bUseClientControlRotation)
-		{
-			bRepRollAndPitch = (Roll != 0 || Pitch != 0);
-		}
-	}
-	else
-	{
-		bool bCanRepRollAndPitch = (CharacterOwner && (CharacterOwner->bUseControllerRotationRoll || CharacterOwner->bUseControllerRotationPitch));
-		bRepRollAndPitch = bCanRepRollAndPitch && (Roll != 0 || Pitch != 0);
-	}
-
+	bool bCanRepRollAndPitch = (CharacterOwner && (CharacterOwner->bUseControllerRotationRoll || CharacterOwner->bUseControllerRotationPitch));
+	bool bRepRollAndPitch = bCanRepRollAndPitch && (Roll != 0 || Pitch != 0);
 	Ar.SerializeBits(&bRepRollAndPitch, 1);
 
 	if (bRepRollAndPitch)
@@ -468,22 +439,6 @@ bool FVRCharacterNetworkMoveData::Serialize(UCharacterMovementComponent& Charact
 	else
 	{
 		SerializePackedVector<100, 30>(LFDiff, Ar);
-	}
-
-	bool bHasCapsuleHeight = CapsuleHeight > 0.f;
-	Ar.SerializeBits(&bHasCapsuleHeight, 1);
-
-	if (bHasCapsuleHeight)
-	{
-		// This is 0.0 - 512.0, using compression to get it smaller, 8 bits = max 256 + 1 bit for sign and 7 bits precision for 128 / full 2 digit precision
-		if (Ar.IsSaving())
-		{
-			WriteFixedCompressedFloat<1024, 18>(CapsuleHeight, Ar);
-		}
-		else
-		{
-			ReadFixedCompressedFloat<1024, 18>(CapsuleHeight, Ar);
-		}
 	}
 
 	//LFDiff.NetSerialize(Ar, PackageMap, bLocalSuccess);

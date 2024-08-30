@@ -9,7 +9,6 @@
 #include "Components/CapsuleComponent.h"
 #include "ParentRelativeAttachmentComponent.h"
 #include "GripMotionControllerComponent.h"
-#include "IMotionController.h"
 #include "VRRootComponent.h"
 #include "VRPathFollowingComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -54,7 +53,7 @@ AVRBaseCharacter::AVRBaseCharacter(const FObjectInitializer& ObjectInitializer)
 		cap->SetCollisionResponseToChannel(ECollisionChannel::ECC_WorldStatic, ECollisionResponse::ECR_Block);
 	}
 
-	NetSmoother = CreateOptionalDefaultSubobject<USceneComponent>(AVRBaseCharacter::SmoothingSceneParentComponentName);
+	NetSmoother = CreateDefaultSubobject<USceneComponent>(AVRBaseCharacter::SmoothingSceneParentComponentName);
 	if (NetSmoother)
 	{
 		NetSmoother->SetupAttachment(RootComponent);
@@ -69,17 +68,17 @@ AVRBaseCharacter::AVRBaseCharacter(const FObjectInitializer& ObjectInitializer)
 		}
 	}
 
-	VRProxyComponent = CreateOptionalDefaultSubobject<USceneComponent>(AVRBaseCharacter::VRProxyComponentName);
+	VRProxyComponent = CreateDefaultSubobject<USceneComponent>(AVRBaseCharacter::VRProxyComponentName);
 	if (NetSmoother && VRProxyComponent)
 	{
 		VRProxyComponent->SetupAttachment(NetSmoother);
 	}
 
-	VRReplicatedCamera = CreateOptionalDefaultSubobject<UReplicatedVRCameraComponent>(AVRBaseCharacter::ReplicatedCameraComponentName);
+	VRReplicatedCamera = CreateDefaultSubobject<UReplicatedVRCameraComponent>(AVRBaseCharacter::ReplicatedCameraComponentName);
 	if (VRReplicatedCamera)
 	{
-		//VRReplicatedCamera->bOffsetByHMD = false;
-		VRReplicatedCamera->SetupAttachment(VRProxyComponent ? VRProxyComponent : NetSmoother ? NetSmoother : RootComponent);
+		VRReplicatedCamera->bOffsetByHMD = false;
+		VRReplicatedCamera->SetupAttachment(VRProxyComponent);
 		VRReplicatedCamera->OverrideSendTransform = &AVRBaseCharacter::Server_SendTransformCamera;
 	}
 
@@ -90,12 +89,12 @@ AVRBaseCharacter::AVRBaseCharacter(const FObjectInitializer& ObjectInitializer)
 		//AddTickPrerequisiteComponent(this->GetCharacterMovement());
 	}
 
-	ParentRelativeAttachment = CreateOptionalDefaultSubobject<UParentRelativeAttachmentComponent>(AVRBaseCharacter::ParentRelativeAttachmentComponentName);
+	ParentRelativeAttachment = CreateDefaultSubobject<UParentRelativeAttachmentComponent>(AVRBaseCharacter::ParentRelativeAttachmentComponentName);
 	if (ParentRelativeAttachment && VRReplicatedCamera)
 	{
 		// Moved this to be root relative as the camera late updates were killing how it worked
-		ParentRelativeAttachment->SetupAttachment(VRProxyComponent ? VRProxyComponent : NetSmoother ? NetSmoother : RootComponent);
-		//ParentRelativeAttachment->bOffsetByHMD = false;
+		ParentRelativeAttachment->SetupAttachment(VRProxyComponent);
+		ParentRelativeAttachment->bOffsetByHMD = false;
 		ParentRelativeAttachment->AddTickPrerequisiteComponent(VRReplicatedCamera);
 
 		if (USkeletalMeshComponent * SKMesh = GetMesh())
@@ -104,28 +103,28 @@ AVRBaseCharacter::AVRBaseCharacter(const FObjectInitializer& ObjectInitializer)
 		}
 	}
 
-	LeftMotionController = CreateOptionalDefaultSubobject<UGripMotionControllerComponent>(AVRBaseCharacter::LeftMotionControllerComponentName);
+	LeftMotionController = CreateDefaultSubobject<UGripMotionControllerComponent>(AVRBaseCharacter::LeftMotionControllerComponentName);
 	if (IsValid(LeftMotionController))
 	{
-		LeftMotionController->SetupAttachment(VRProxyComponent ? VRProxyComponent : NetSmoother ? NetSmoother : RootComponent);
+		LeftMotionController->SetupAttachment(VRProxyComponent);
 		//LeftMotionController->MotionSource = FXRMotionControllerBase::LeftHandSourceId;
-		LeftMotionController->SetTrackingMotionSource(IMotionController::LeftHandSourceId);
+		LeftMotionController->SetTrackingMotionSource(FXRMotionControllerBase::LeftHandSourceId);
 		//LeftMotionController->Hand = EControllerHand::Left;
-		//LeftMotionController->bOffsetByHMD = false;
+		LeftMotionController->bOffsetByHMD = false;
 		//LeftMotionController->bUpdateInCharacterMovement = true;
 		// Keep the controllers ticking after movement
 		LeftMotionController->AddTickPrerequisiteComponent(GetCharacterMovement());
 		LeftMotionController->OverrideSendTransform = &AVRBaseCharacter::Server_SendTransformLeftController;
 	}
 
-	RightMotionController = CreateOptionalDefaultSubobject<UGripMotionControllerComponent>(AVRBaseCharacter::RightMotionControllerComponentName);
+	RightMotionController = CreateDefaultSubobject<UGripMotionControllerComponent>(AVRBaseCharacter::RightMotionControllerComponentName);
 	if (IsValid(RightMotionController))
 	{
-		RightMotionController->SetupAttachment(VRProxyComponent ? VRProxyComponent : NetSmoother ? NetSmoother : RootComponent);
+		RightMotionController->SetupAttachment(VRProxyComponent);
 		//RightMotionController->MotionSource = FXRMotionControllerBase::RightHandSourceId;
-		RightMotionController->SetTrackingMotionSource(IMotionController::RightHandSourceId);
+		RightMotionController->SetTrackingMotionSource(FXRMotionControllerBase::RightHandSourceId);
 		//RightMotionController->Hand = EControllerHand::Right;
-		//RightMotionController->bOffsetByHMD = false;
+		RightMotionController->bOffsetByHMD = false;
 		//RightMotionController->bUpdateInCharacterMovement = true;
 		// Keep the controllers ticking after movement
 		RightMotionController->AddTickPrerequisiteComponent(GetCharacterMovement());
@@ -287,25 +286,6 @@ void AVRBaseCharacter::Server_ReZeroSeating_Implementation(FTransform_NetQuantiz
 }
 
 bool AVRBaseCharacter::Server_ReZeroSeating_Validate(FTransform_NetQuantize NewTargetTransform, FTransform_NetQuantize NewInitialRelCameraTransform, bool bZeroToHead)
-{
-	return true;
-}
-
-void AVRBaseCharacter::Server_SeatedSnapTurn_Implementation(float Yaw)
-{
-	if(VRMovementReference && SeatInformation.bSitting)
-	{
-		FVRMoveActionContainer MoveActionTmp;
-		MoveActionTmp.MoveAction = EVRMoveAction::VRMOVEACTION_SnapTurn;
-		MoveActionTmp.MoveActionRot.Yaw = Yaw;
-		MoveActionTmp.VelRetentionSetting = EVRMoveActionVelocityRetention::VRMOVEACTION_Velocity_None;
-		VRMovementReference->MoveActionArray.MoveActions.Add(MoveActionTmp);
-		VRMovementReference->CheckForMoveAction();
-		VRMovementReference->MoveActionArray.Clear();
-	}
-}
-
-bool AVRBaseCharacter::Server_SeatedSnapTurn_Validate(float Yaw)
 {
 	return true;
 }
@@ -680,9 +660,6 @@ void AVRBaseCharacter::InitSeatedModeTransition()
 
 void AVRBaseCharacter::TickSeatInformation(float DeltaTime)
 {
-	if (!VRReplicatedCamera)
-		return;
-	
 	float LastThresholdScaler = SeatInformation.CurrentThresholdScaler;
 	bool bLastOverThreshold = SeatInformation.bIsOverThreshold;
 
@@ -782,7 +759,7 @@ bool AVRBaseCharacter::SetSeatedMode(USceneComponent * SeatParent, bool bSetSeat
 
 		// Automate the intial relative camera transform for this mode
 		// I think we can remove the initial value alltogether eventually right?
-		if (!bRetainRoomscale && VRReplicatedCamera)
+		if (!bRetainRoomscale)
 		{
 			InitialRelCameraTransform = FTransform(VRReplicatedCamera->ReplicatedCameraTransform.Rotation, VRReplicatedCamera->ReplicatedCameraTransform.Position, VRReplicatedCamera->GetComponentScale());
 		}
@@ -883,7 +860,7 @@ FVector AVRBaseCharacter::AddActorWorldRotationVR(FRotator DeltaRot, bool bUseYa
 	}
 
 	NewLocation = OrigLocation + NewRotation.RotateVector(PivotPoint);
-	NewRotation = (NewRotation.Quaternion() * DeltaRot.Quaternion()).Rotator();
+	NewRotation = (DeltaRot.Quaternion() * NewRotation.Quaternion()).Rotator();
 	NewLocation -= NewRotation.RotateVector(PivotPoint);
 
 	if (bUseControllerRotationYaw && OwningController /*&& IsLocallyControlled()*/)
@@ -912,7 +889,7 @@ FVector AVRBaseCharacter::SetActorRotationVR(FRotator NewRot, bool bUseYawOnly, 
 		NewRot.Roll = 0.0f;
 	}
 
-	if (bAccountForHMDRotation && VRReplicatedCamera)
+	if (bAccountForHMDRotation)
 	{
 		NewRotation = UVRExpansionFunctionLibrary::GetHMDPureYaw_I(VRReplicatedCamera->GetRelativeRotation());
 		NewRotation = (NewRot.Quaternion() * NewRotation.Quaternion().Inverse()).Rotator();
@@ -947,7 +924,7 @@ FVector AVRBaseCharacter::SetActorLocationAndRotationVR(FVector NewLoc, FRotator
 		NewRot.Roll = 0.0f;
 	}
 
-	if (bAccountForHMDRotation && VRReplicatedCamera)
+	if (bAccountForHMDRotation)
 	{
 		NewRotation = UVRExpansionFunctionLibrary::GetHMDPureYaw_I(VRReplicatedCamera->GetRelativeRotation());//bUseControllerRotationYaw && OwningController ? OwningController->GetControlRotation() : GetActorRotation();
 		NewRotation = (NewRot.Quaternion() * NewRotation.Quaternion().Inverse()).Rotator();

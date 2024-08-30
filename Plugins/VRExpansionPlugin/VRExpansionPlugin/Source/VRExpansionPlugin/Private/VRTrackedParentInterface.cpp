@@ -4,8 +4,6 @@
 #include UE_INLINE_GENERATED_CPP_BY_NAME(VRTrackedParentInterface)
 
 #include "UObject/Interface.h"
-#include "Components/PrimitiveComponent.h"
-#include "Components/SceneComponent.h"
 #include "VRBPDatatypes.h"
  
 UVRTrackedParentInterface::UVRTrackedParentInterface(const class FObjectInitializer& ObjectInitializer)

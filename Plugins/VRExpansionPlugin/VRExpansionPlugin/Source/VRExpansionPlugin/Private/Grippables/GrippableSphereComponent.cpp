@@ -68,7 +68,7 @@ bool UGrippableSphereComponent::ReplicateSubobjects(UActorChannel* Channel, clas
 {
 	bool WroteSomething = Super::ReplicateSubobjects(Channel, Bunch, RepFlags);
 
-	if (bReplicateGripScripts && !IsUsingRegisteredSubObjectList())
+	if (bReplicateGripScripts)
 	{
 		for (UVRGripScriptBase* Script : GripLogicScripts)
 		{

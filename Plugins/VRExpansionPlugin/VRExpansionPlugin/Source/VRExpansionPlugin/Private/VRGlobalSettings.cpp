@@ -108,6 +108,9 @@ FTransform UVRGlobalSettings::AdjustTransformByGivenControllerProfile(UPARAM(ref
 {
 	// Use currently loaded transform
 	return SocketTransform * (((bIsRightHand && ControllerProfile.bUseSeperateHandOffsetTransforms) ? ControllerProfile.SocketOffsetTransformRightHand : ControllerProfile.SocketOffsetTransform));
+
+	// Couldn't find it, return base transform
+	return SocketTransform;
 }
 
 TArray<FBPVRControllerProfile> UVRGlobalSettings::GetControllerProfiles()

@@ -11,9 +11,6 @@
 #include "VRRootComponent.h"
 #include "TextureResource.h"
 #include "Engine/Texture.h"
-#include "Engine/GameInstance.h"
-#include "SceneManagement.h"
-#include "Materials/Material.h"
 #include "IStereoLayers.h"
 #include "IHeadMountedDisplay.h"
 #include "PrimitiveViewRelevance.h"
@@ -24,9 +21,8 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialRenderProxy.h"
 #include "Engine/Engine.h"
-#include "Engine/GameViewportClient.h"
-#include "Engine/TextureRenderTarget2D.h"
 //#include "Widgets/SWindow.h"
+#include "Engine/TextureRenderTarget2D.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Kismet/KismetSystemLibrary.h"
 //#include "Input/HittestGrid.h"
@@ -36,13 +32,11 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "Slate/SGameLayerManager.h"
 #include "Slate/SWorldWidgetScreenLayer.h"
-
 #include "Widgets/SViewport.h"
 #include "Widgets/SViewport.h"
 #include "Slate/WidgetRenderer.h"
 #include "Blueprint/UserWidget.h"
-#include "SceneInterface.h"
-
+#include "Engine/TextureRenderTarget2D.h"
 #include "StereoLayerShapes.h"
 
 // CVars
@@ -147,7 +141,6 @@ void UVRStereoWidgetRenderComponent::ReleaseResources()
 #if !UE_SERVER
 	FWorldDelegates::LevelRemovedFromWorld.RemoveAll(this);
 #endif
-
 	if (Widget)
 	{
 		Widget = nullptr;
@@ -346,7 +339,6 @@ void UVRStereoWidgetRenderComponent::RenderWidget(float DeltaTime)
 		const EPixelFormat requestedFormat = FSlateApplication::Get().GetRenderer()->GetSlateRecommendedColorFormat();
 		RenderTarget = NewObject<UTextureRenderTarget2D>();
 		check(RenderTarget);
-		RenderTarget->AddToRoot();
 		RenderTarget->ClearColor = RenderTargetClearColor;
 		RenderTarget->TargetGamma = WidgetRenderGamma;
 		RenderTarget->InitCustomFormat(TextureSize.X, TextureSize.Y, requestedFormat /*PF_B8G8R8A8*/, false);
@@ -387,7 +379,7 @@ UVRStereoWidgetComponent::UVRStereoWidgetComponent(const FObjectInitializer& Obj
 	, Priority(0)
 	, bIsDirty(true)
 	, bTextureNeedsUpdate(false)
-	, LayerId(IStereoLayers::FLayerDesc::INVALID_LAYER_ID)
+	, LayerId(0)
 	, LastTransform(FTransform::Identity)
 	, bLastVisible(false)
 {
@@ -418,7 +410,7 @@ void UVRStereoWidgetComponent::BeginDestroy()
 	if (LayerId && GEngine->StereoRenderingDevice.IsValid() && (StereoLayers = GEngine->StereoRenderingDevice->GetStereoLayers()) != nullptr)
 	{
 		StereoLayers->DestroyLayer(LayerId);
-		LayerId = IStereoLayers::FLayerDesc::INVALID_LAYER_ID;
+		LayerId = 0;
 	}
 
 	Super::BeginDestroy();
@@ -431,7 +423,7 @@ void UVRStereoWidgetComponent::OnUnregister()
 	if (LayerId && GEngine->StereoRenderingDevice.IsValid() && (StereoLayers = GEngine->StereoRenderingDevice->GetStereoLayers()) != nullptr)
 	{
 		StereoLayers->DestroyLayer(LayerId);
-		LayerId = IStereoLayers::FLayerDesc::INVALID_LAYER_ID;
+		LayerId = 0;
 	}
 
 	Super::OnUnregister();
@@ -455,7 +447,6 @@ void UVRStereoWidgetComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 
 	if (IsRunningDedicatedServer())
 	{
-		SetTickMode(ETickMode::Disabled);
 		return;
 	}
 
@@ -485,7 +476,7 @@ void UVRStereoWidgetComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 					if (StereoLayers)
 						StereoLayers->DestroyLayer(LayerId);
 				}
-				LayerId = IStereoLayers::FLayerDesc::INVALID_LAYER_ID;
+				LayerId = 0;
 			}
 		}
 
@@ -576,31 +567,28 @@ void UVRStereoWidgetComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 					bool bHandledTransform = false;
 					if (AVRBaseCharacter* BaseVRChar = Cast<AVRBaseCharacter>(mpawn))
 					{
-						if (BaseVRChar->VRReplicatedCamera)
+						if (USceneComponent* CameraParent = BaseVRChar->VRReplicatedCamera->GetAttachParent())
 						{
-							if (USceneComponent* CameraParent = BaseVRChar->VRReplicatedCamera->GetAttachParent())
+							FTransform DeltaTrans = FTransform::Identity;
+							if (!BaseVRChar->bRetainRoomscale)
 							{
-								FTransform DeltaTrans = FTransform::Identity;
-								if (!BaseVRChar->bRetainRoomscale)
+								FVector HMDLoc;
+								FQuat HMDRot;
+								GEngine->XRSystem->GetCurrentPose(IXRTrackingSystem::HMDDeviceId, HMDRot, HMDLoc);
+
+								HMDLoc.Z = 0.0f;
+
+								if (AVRCharacter* VRChar = Cast<AVRCharacter>(mpawn))
 								{
-									FVector HMDLoc;
-									FQuat HMDRot;
-									GEngine->XRSystem->GetCurrentPose(IXRTrackingSystem::HMDDeviceId, HMDRot, HMDLoc);
-
-									HMDLoc.Z = 0.0f;
-
-									if (AVRCharacter* VRChar = Cast<AVRCharacter>(mpawn))
-									{
-										HMDLoc += UVRExpansionFunctionLibrary::GetHMDPureYaw_I(HMDRot.Rotator()).RotateVector(FVector(VRChar->VRRootReference->VRCapsuleOffset.X, VRChar->VRRootReference->VRCapsuleOffset.Y, 0.0f));
-									}
-
-									DeltaTrans = FTransform(FQuat::Identity, HMDLoc, FVector(1.0f));
+									HMDLoc += UVRExpansionFunctionLibrary::GetHMDPureYaw_I(HMDRot.Rotator()).RotateVector(FVector(VRChar->VRRootReference->VRCapsuleOffset.X, VRChar->VRRootReference->VRCapsuleOffset.Y, 0.0f));
 								}
 
-								Transform = OffsetTransform.GetRelativeTransform(CameraParent->GetComponentTransform());
-								Transform = (FTransform(FRotator(0.f, -180.f, 0.f)) * Transform) * DeltaTrans;
-								bHandledTransform = true;
+								DeltaTrans = FTransform(FQuat::Identity, HMDLoc, FVector(1.0f));
 							}
+
+							Transform = OffsetTransform.GetRelativeTransform(CameraParent->GetComponentTransform());
+							Transform = (FTransform(FRotator(0.f, -180.f, 0.f)) * Transform) * DeltaTrans;
+							bHandledTransform = true;
 						}
 					}
 					else if (UCameraComponent* Camera = mpawn->FindComponentByClass<UCameraComponent>())
@@ -637,7 +625,7 @@ void UVRStereoWidgetComponent::TickComponent(float DeltaTime, enum ELevelTick Ti
 				if (LayerId)
 				{
 					StereoLayers->DestroyLayer(LayerId);
-					LayerId = IStereoLayers::FLayerDesc::INVALID_LAYER_ID;
+					LayerId = 0;
 				}
 				return;
 			}
@@ -888,7 +876,7 @@ public:
 			PreviousLocalToWorld = GetLocalToWorld();
 		}
 
-		if (RenderTarget)
+		if (RenderTarget)//false)//RenderTarget)
 		{
 			FTextureResource* TextureResource = RenderTarget->GetResource();
 			if (TextureResource)
@@ -1054,14 +1042,14 @@ public:
 						Collector.RegisterOneFrameMaterialProxy(SolidMaterialInstance);
 
 						FTransform GeomTransform(GetLocalToWorld());
-						InBodySetup->AggGeom.GetAggGeom(GeomTransform, GetWireframeColor().ToFColor(true), SolidMaterialInstance, false, true, AlwaysHasVelocity(), ViewIndex, Collector);
+						InBodySetup->AggGeom.GetAggGeom(GeomTransform, GetWireframeColor().ToFColor(true), SolidMaterialInstance, false, true, DrawsVelocity(), ViewIndex, Collector);
 					}
 					// wireframe
 					else
 					{
 						FColor CollisionColor = FColor(157, 149, 223, 255);
 						FTransform GeomTransform(GetLocalToWorld());
-						InBodySetup->AggGeom.GetAggGeom(GeomTransform, GetSelectionColor(CollisionColor, bProxyIsSelected, IsHovered()).ToFColor(true), nullptr, false, false, AlwaysHasVelocity(), ViewIndex, Collector);
+						InBodySetup->AggGeom.GetAggGeom(GeomTransform, GetSelectionColor(CollisionColor, bProxyIsSelected, IsHovered()).ToFColor(true), nullptr, false, false, DrawsVelocity(), ViewIndex, Collector);
 					}
 				}
 			}
@@ -1132,75 +1120,13 @@ FPrimitiveSceneProxy* UVRStereoWidgetComponent::CreateSceneProxy()
 
 	if (WidgetRenderer && GetSlateWindow() && GetSlateWindow()->GetContent() != SNullWidget::NullWidget)
 	{
-		RequestRenderUpdate();
+		RequestRedraw();
 		LastWidgetRenderTime = 0;
 
 		return new FStereoWidget3DSceneProxy(this, *WidgetRenderer->GetSlateRenderer());
 	}
 
-#if WITH_EDITOR
-	// make something so we can see this component in the editor
-	class FWidgetBoxProxy final : public FPrimitiveSceneProxy
-	{
-	public:
-		SIZE_T GetTypeHash() const override
-		{
-			static size_t UniquePointer;
-			return reinterpret_cast<size_t>(&UniquePointer);
-		}
-
-		FWidgetBoxProxy(const UWidgetComponent* InComponent)
-			: FPrimitiveSceneProxy(InComponent)
-			, BoxExtents(1.f, InComponent->GetCurrentDrawSize().X / 2.0f, InComponent->GetCurrentDrawSize().Y / 2.0f)
-		{
-			bWillEverBeLit = false;
-		}
-
-		virtual void GetDynamicMeshElements(const TArray<const FSceneView*>& Views, const FSceneViewFamily& ViewFamily, uint32 VisibilityMap, FMeshElementCollector& Collector) const override
-		{
-			QUICK_SCOPE_CYCLE_COUNTER(STAT_BoxSceneProxy_GetDynamicMeshElements);
-
-			const FMatrix& LocalToWorld = GetLocalToWorld();
-
-			for (int32 ViewIndex = 0; ViewIndex < Views.Num(); ViewIndex++)
-			{
-				if (VisibilityMap & (1 << ViewIndex))
-				{
-					const FSceneView* View = Views[ViewIndex];
-
-					const FLinearColor DrawColor = GetViewSelectionColor(FColor::White, *View, IsSelected(), IsHovered(), false, IsIndividuallySelected());
-
-					FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
-					DrawOrientedWireBox(PDI, LocalToWorld.GetOrigin(), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), BoxExtents, DrawColor, SDPG_World);
-				}
-			}
-		}
-
-		virtual FPrimitiveViewRelevance GetViewRelevance(const FSceneView* View) const override
-		{
-			FPrimitiveViewRelevance Result;
-			if (!View->bIsGameView)
-			{
-				// Should we draw this because collision drawing is enabled, and we have collision
-				const bool bShowForCollision = View->Family->EngineShowFlags.Collision && IsCollisionEnabled();
-				Result.bDrawRelevance = IsShown(View) || bShowForCollision;
-				Result.bDynamicRelevance = true;
-				Result.bShadowRelevance = IsShadowCast(View);
-				Result.bEditorPrimitiveRelevance = UseEditorCompositing(View);
-			}
-			return Result;
-		}
-		virtual uint32 GetMemoryFootprint(void) const override { return(sizeof(*this) + GetAllocatedSize()); }
-		uint32 GetAllocatedSize(void) const { return(FPrimitiveSceneProxy::GetAllocatedSize()); }
-
-	private:
-		const FVector	BoxExtents;
-	};
-
-	return new FWidgetBoxProxy(this);
-#else
 	return nullptr;
-#endif
 }
 
 class FVRStereoWidgetComponentInstanceData : public FActorComponentInstanceData

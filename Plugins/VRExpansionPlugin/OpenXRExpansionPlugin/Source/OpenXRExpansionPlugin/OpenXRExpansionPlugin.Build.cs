@@ -43,7 +43,6 @@ namespace UnrealBuildTool.Rules
                     //"AnimGraph",
                     "AnimGraphRuntime",
                     "SlateCore",
-                    "XRBase"
 					//"LiveLink",
 					//"LiveLinkInterface",
                 }

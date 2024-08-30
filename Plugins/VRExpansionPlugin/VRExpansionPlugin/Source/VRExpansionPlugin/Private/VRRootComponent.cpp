@@ -7,8 +7,6 @@
 //#include "WorldCollision.h"
 #include "PhysicsPublic.h"
 #include "Engine/ScopedMovementUpdate.h"
-#include "SceneManagement.h"
-#include "PrimitiveSceneProxy.h"
 //#include "DrawDebugHelpers.h"
 #include "IHeadMountedDisplay.h"
 #include "IXRTrackingSystem.h"
@@ -355,16 +353,17 @@ public:
 				FPrimitiveDrawInterface* PDI = Collector.GetPDI(ViewIndex);
 
 				// If in editor views, lets offset the capsule upwards so that it views correctly
+				
 				if (bSimulating)
 				{
-					DrawWireCapsule(PDI, LocalToWorld.GetOrigin() - FVector(0.f, 0.f, CapsuleHalfHeight), LocalToWorld.GetUnitAxis(EAxis::X), LocalToWorld.GetUnitAxis(EAxis::Y), LocalToWorld.GetUnitAxis(EAxis::Z), DrawCapsuleColor, CapsuleRadius, CapsuleHalfHeight, CapsuleSides, SDPG_World);
+					DrawWireCapsule(PDI, LocalToWorld.GetOrigin() - FVector(0.f, 0.f, CapsuleHalfHeight), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), DrawCapsuleColor, CapsuleRadius, CapsuleHalfHeight, CapsuleSides, SDPG_World);
 				}
 				else if (UseEditorCompositing(View))
 				{
-					DrawWireCapsule(PDI, LocalToWorld.GetOrigin() /*+ FVector(0.f, 0.f, CapsuleHalfHeight)*/, LocalToWorld.GetUnitAxis(EAxis::X), LocalToWorld.GetUnitAxis(EAxis::Y), LocalToWorld.GetUnitAxis(EAxis::Z), DrawCapsuleColor, CapsuleRadius, CapsuleHalfHeight, CapsuleSides, SDPG_World, 1.25f);
+					DrawWireCapsule(PDI, LocalToWorld.GetOrigin() /*+ FVector(0.f, 0.f, CapsuleHalfHeight)*/, LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), DrawCapsuleColor, CapsuleRadius, CapsuleHalfHeight, CapsuleSides, SDPG_World, 1.25f);
 				}
 				else
-					DrawWireCapsule(PDI, LocalToWorld.GetOrigin(), LocalToWorld.GetUnitAxis(EAxis::X), LocalToWorld.GetUnitAxis(EAxis::Y), LocalToWorld.GetUnitAxis(EAxis::Z), DrawCapsuleColor, CapsuleRadius, CapsuleHalfHeight, CapsuleSides, SDPG_World, 1.25f);					
+					DrawWireCapsule(PDI, LocalToWorld.GetOrigin(), LocalToWorld.GetScaledAxis(EAxis::X), LocalToWorld.GetScaledAxis(EAxis::Y), LocalToWorld.GetScaledAxis(EAxis::Z), DrawCapsuleColor, CapsuleRadius, CapsuleHalfHeight, CapsuleSides, SDPG_World, 1.25f);					
 			}
 		}
 	}
@@ -423,14 +422,11 @@ void UVRRootComponent::BeginPlay()
 	Super::BeginPlay();
 
 	if(AVRBaseCharacter * vrOwner = Cast<AVRBaseCharacter>(this->GetOwner()))
-	{
-		if (vrOwner->VRReplicatedCamera)
-		{
-			TargetPrimitiveComponent = vrOwner->VRReplicatedCamera;
-			owningVRChar = vrOwner;
-			//VRCameraCollider = vrOwner->VRCameraCollider;
-			return;
-		}
+	{ 
+		TargetPrimitiveComponent = vrOwner->VRReplicatedCamera;
+		owningVRChar = vrOwner;
+		//VRCameraCollider = vrOwner->VRCameraCollider;
+		return;
 	}
 	else
 	{
@@ -459,7 +455,7 @@ void UVRRootComponent::SetTrackingPaused(bool bPaused)
 
 void UVRRootComponent::UpdateCharacterCapsuleOffset()
 {
-	if (owningVRChar && !owningVRChar->bRetainRoomscale && owningVRChar->NetSmoother)
+	if (owningVRChar && !owningVRChar->bRetainRoomscale)
 	{
 		if (!FMath::IsNearlyEqual(LastCapsuleHalfHeight, CapsuleHalfHeight))
 		{
@@ -488,13 +484,11 @@ void UVRRootComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, 
 	}
 
 	UVRBaseCharacterMovementComponent * CharMove = nullptr;
-	bool bRetainRoomscale = true;
 
 	// Need these for passing physics updates to character movement
 	if (IsValid(owningVRChar))
 	{
 		CharMove = Cast<UVRBaseCharacterMovementComponent>(owningVRChar->GetCharacterMovement());
-		bRetainRoomscale = owningVRChar->bRetainRoomscale;
 	}
 
 	if (IsLocallyControlled())
@@ -544,7 +538,7 @@ void UVRRootComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, 
 
 		// Skip this if not retaining roomscale as we use higher initial fidelity
 		// And we can rep the values at full precision if we want too
-		if (bRetainRoomscale)
+		if (owningVRChar->bRetainRoomscale)
 		{
 			// Pre-Process this for network sends
 			curCameraLoc.X = FMath::RoundToFloat(curCameraLoc.X * 100.f) / 100.f;
@@ -554,14 +548,14 @@ void UVRRootComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, 
 		
 
 		// Can adjust the relative tolerances to remove jitter and some update processing
-		if (!bRetainRoomscale || (!curCameraLoc.Equals(lastCameraLoc, 0.01f) || !curCameraRot.Equals(lastCameraRot, 0.01f)))
+		if (!owningVRChar->bRetainRoomscale || (!curCameraLoc.Equals(lastCameraLoc, 0.01f) || !curCameraRot.Equals(lastCameraRot, 0.01f)))
 		{
 			// Also calculate vector of movement for the movement component
 			FVector LastPosition = OffsetComponentToWorld.GetLocation();
 
 			bCalledUpdateTransform = false;
 
-			if (bRetainRoomscale)
+			if (owningVRChar->bRetainRoomscale)
 			{
 				// If the character movement doesn't exist or is not active/ticking
 				if (!CharMove || !CharMove->IsComponentTickEnabled() || !CharMove->IsActive())
@@ -583,7 +577,7 @@ void UVRRootComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, 
 			Params.bFindInitialOverlaps = true;
 			bool bBlockingHit = false;
 
-			if (bUseWalkingCollisionOverride && bRetainRoomscale)
+			if (bUseWalkingCollisionOverride && owningVRChar->bRetainRoomscale)
 			{
 				FVector TargetWorldLocation = OffsetComponentToWorld.GetLocation();
 				bool bAllowWalkingCollision = false;
@@ -613,9 +607,9 @@ void UVRRootComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, 
 				bHadRelativeMovement = true;
 
 			// Not supporting walking collision override currently with new pawn setup
-			if (bHadRelativeMovement || (owningVRChar && !owningVRChar->bRetainRoomscale))
+			if (bHadRelativeMovement || !owningVRChar->bRetainRoomscale)
 			{
-				if (bRetainRoomscale)
+				if (owningVRChar->bRetainRoomscale)
 				{
 					DifferenceFromLastFrame = OffsetComponentToWorld.GetLocation() - LastPosition;
 					lastCameraLoc = curCameraLoc;
@@ -624,17 +618,14 @@ void UVRRootComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, 
 					//DifferenceFromLastFrame = (NextTransform.GetLocation() - LastPosition);// .GetSafeNormal2D();
 					DifferenceFromLastFrame.X = FMath::RoundToFloat(DifferenceFromLastFrame.X * 100.f) / 100.f;
 					DifferenceFromLastFrame.Y = FMath::RoundToFloat(DifferenceFromLastFrame.Y * 100.f) / 100.f;
-					DifferenceFromLastFrame.Z = FMath::RoundToFloat(DifferenceFromLastFrame.Z * 100.f) / 100.f;
-					//DifferenceFromLastFrame.Z = 0.0f; // Reset Z to zero, its not used anyway and this lets me reuse the Z component for capsule half height
+					DifferenceFromLastFrame.Z = 0.0f; // Reset Z to zero, its not used anyway and this lets me reuse the Z component for capsule half height
 				}
 				else
 				{
 
 					// Run this first so we get full fidelity on the relative space calculation
 					FVector NewLocation = StoredCameraRotOffset.RotateVector(FVector(VRCapsuleOffset.X, VRCapsuleOffset.Y, 0.0f)) + curCameraLoc;
-					FVector PlanerLocation = NewLocation - lastCameraLoc;
-					PlanerLocation.Z = 0.0f;
-					DifferenceFromLastFrame = GetComponentTransform().TransformVector(PlanerLocation);
+					DifferenceFromLastFrame = GetComponentTransform().TransformVector(NewLocation - lastCameraLoc);
 					lastCameraLoc = NewLocation;
 					lastCameraRot = curCameraRot;
 
@@ -650,8 +641,7 @@ void UVRRootComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, 
 						// Would overflow the max/min values of a float. It shouldn't ever be harmful as that is a loooot of travel in one tick
 						DifferenceFromLastFrame.X = FMath::RoundToFloat(FMath::Clamp(DifferenceFromLastFrame.X, -100.0f, 100.0f) * 10000.f) / 10000.f;
 						DifferenceFromLastFrame.Y = FMath::RoundToFloat(FMath::Clamp(DifferenceFromLastFrame.Y, -100.0f, 100.0f) * 10000.f) / 10000.f;
-						DifferenceFromLastFrame.Z = FMath::RoundToFloat(FMath::Clamp(DifferenceFromLastFrame.Z, -100.0f, 100.0f) * 10000.f) / 10000.f;
-						//DifferenceFromLastFrame.Z = 0.0f; // Reset Z to zero, its not used anyway and this lets me reuse the Z component for capsule half height
+						DifferenceFromLastFrame.Z = 0.0f; // Reset Z to zero, its not used anyway and this lets me reuse the Z component for capsule half height
 					}
 				}
 
@@ -761,10 +751,7 @@ void UVRRootComponent::SetSimulatePhysics(bool bSimulate)
 	{
 		if (AVRCharacter* OwningCharacter = Cast<AVRCharacter>(GetOwner()))
 		{
-			if (OwningCharacter->NetSmoother)
-			{
-				OwningCharacter->NetSmoother->SetRelativeLocation(FVector(0.f,0.f, -this->GetUnscaledCapsuleHalfHeight()));
-			}
+			OwningCharacter->NetSmoother->SetRelativeLocation(FVector(0.f,0.f, -this->GetUnscaledCapsuleHalfHeight()));
 		}	
 		this->AddWorldOffset(this->GetComponentRotation().RotateVector(FVector(0.f, 0.f, this->GetScaledCapsuleHalfHeight())), false, nullptr, ETeleportType::TeleportPhysics);
 	}
@@ -772,10 +759,7 @@ void UVRRootComponent::SetSimulatePhysics(bool bSimulate)
 	{
 		if (AVRCharacter* OwningCharacter = Cast<AVRCharacter>(GetOwner()))
 		{
-			if (OwningCharacter->NetSmoother)
-			{
-				OwningCharacter->NetSmoother->SetRelativeLocation(FVector(0.f, 0.f, 0));
-			}
+			OwningCharacter->NetSmoother->SetRelativeLocation(FVector(0.f, 0.f, 0));
 		}
 		this->AddWorldOffset(this->GetComponentRotation().RotateVector(FVector(0.f, 0.f, -this->GetScaledCapsuleHalfHeight())), false, nullptr, ETeleportType::TeleportPhysics);
 	}
